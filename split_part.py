@@ -2,20 +2,29 @@ import subprocess
 
 DESCRIPTION = "Outputs a single chunk of the source video.\nTime format: \"hh:mm:ss\".\nIf Start Time is empty, start from beginning.\nIf End Time is empty, end when the video ends."
 INFINITE_LOOPING = True  # if True, keep asking for files after processing one, until closing any modal window
+DEBUG_COMMAND = False
+HAS_YAD = None  # Set to True/False to force using yad/zenity. If None, autodetect yad
 
 
 def has_yad():
     try:
-        subprocess.check_call(["yad", "--version"])
-        return True
+        status_code = subprocess.call(["yad", "--version"])
+        return status_code in (0, 252)
     except Exception:
         return False
 
 
-HAS_YAD = has_yad()  # TODO Not working
+HAS_YAD = has_yad() if HAS_YAD is None else HAS_YAD
+
+
+def debug_command(command, bypass_setting=False):
+    if DEBUG_COMMAND or bypass_setting:
+        print(*["\"{}\"".format(chunk) if " " in chunk else chunk for chunk in command])
 
 
 def run_zenity(*args):
+    command = ["yad" if HAS_YAD else "zenity", *args]
+    debug_command(command)
     output = subprocess.check_output(["yad" if HAS_YAD else "zenity", *args])
     return output.decode().strip()
 
@@ -44,16 +53,17 @@ def normalize_time(time_str):
 
 
 def get_time_range():
-    delimiter = "$$$"
+    delimiter = "#"
+    form = "--form" if HAS_YAD else "--forms"
     add_entry = "--field" if HAS_YAD else "--add-entry"
-    output = run_zenity("--forms", "--title", "mkvmerge split parts",
+    output = run_zenity(form, "--title", "mkvmerge split parts",
                         "--text", DESCRIPTION, "--separator", delimiter,
                         add_entry, "Start time",
                         add_entry, "End time"
                        )
-    start_time, end_time = output.split(delimiter)
-    start_time = normalize_time(start_time)
-    end_time = normalize_time(end_time)
+    chunks = output.split(delimiter)
+    start_time = normalize_time(chunks[0])
+    end_time = normalize_time(chunks[1])
     return start_time, end_time
 
 
@@ -67,7 +77,7 @@ def run_split(input_filename, start, end):
     output_filename = get_video_output_filename(input_filename)
 
     command = ["mkvmerge", "--split", parts, input_filename, "-o", output_filename]
-    print(*["\"{}\"".format(chunk) if " " in chunk else chunk for chunk in command])
+    debug_command(command, bypass_setting=True)
     subprocess.call(command)
 
 
