@@ -25,7 +25,7 @@ def debug_command(command, bypass_setting=False):
 def run_zenity(*args):
     command = ["yad" if HAS_YAD else "zenity", *args]
     debug_command(command)
-    output = subprocess.check_output(["yad" if HAS_YAD else "zenity", *args])
+    output = subprocess.check_output(command)
     return output.decode().strip()
 
 
@@ -79,6 +79,7 @@ def run_split(input_filename, start, end):
     command = ["mkvmerge", "--split", parts, input_filename, "-o", output_filename]
     debug_command(command, bypass_setting=True)
     subprocess.call(command)
+    # TODO print output in modal window? + buttons to load another video or exit
 
 
 def main():
