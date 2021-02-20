@@ -1,7 +1,6 @@
 import subprocess
 
 DESCRIPTION = "Outputs a single chunk of the source video.\nTime format: \"hh:mm:ss\".\nIf Start Time is empty, start from beginning.\nIf End Time is empty, end when the video ends."
-INFINITE_LOOPING = True  # if True, keep asking for files after processing one, until closing any modal window
 DEBUG_COMMAND = False
 HAS_YAD = None  # Set to True/False to force using yad/zenity. If None, autodetect yad
 
@@ -24,9 +23,25 @@ def debug_command(command, bypass_setting=False):
 
 def run_zenity(*args):
     command = ["yad" if HAS_YAD else "zenity", *args]
+    if HAS_YAD:
+        command.append("--center")
     debug_command(command)
     output = subprocess.check_output(command)
     return output.decode().strip()
+
+
+def do_question(title, text, failure=False):
+    image = "dialog-warning" if failure else "dialog-question"
+    if HAS_YAD:
+        command = ["--image", image, "--title", title, "--text", text, "--button=gtk-yes:0", "--button=gtk-no:1"]
+    else:
+        command = ["--question", "--image", image, "--title", title, "--text", text]
+
+    try:
+        run_zenity(*command)
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def get_filename():
@@ -78,8 +93,14 @@ def run_split(input_filename, start, end):
 
     command = ["mkvmerge", "--split", parts, input_filename, "-o", output_filename]
     debug_command(command, bypass_setting=True)
-    subprocess.call(command)
-    # TODO print output in modal window? + buttons to load another video or exit
+    output = subprocess.check_output(command)
+    return output.decode().strip()
+
+
+def show_result(output, failure=False):
+    result_text = "failed - output" if failure else "output"
+    text = "mkvmerge {}:\n\n{}\n\nDo you want to process another video?".format(result_text, output)
+    return do_question(title="mkvmerge result", text=text, failure=failure)
 
 
 def main():
@@ -90,10 +111,20 @@ def main():
         except subprocess.CalledProcessError:
             print("zenity failed or closed")
             break
-        
-        run_split(filename, start, end)
-        
-        if not INFINITE_LOOPING:
+
+        try:
+            output = run_split(filename, start, end)
+            failed = False
+        except subprocess.CalledProcessError as ex:
+            output = ex.output.decode().strip()
+            failed = True
+        except FileNotFoundError:
+            show_result("mkvmerge not found!", failure=True)
+            exit(1)
+
+        keep_running = show_result(output, failure=failed)
+
+        if not keep_running:
             break
 
 
